@@ -90,11 +90,25 @@ export class AccountManager {
 
   // ---- Cross-account aggregation ----
 
+  /** Throttle: only warn once per account per 5 minutes */
+  private equityWarnedAt = new Map<string, number>()
+  private static readonly EQUITY_WARN_INTERVAL_MS = 5 * 60_000
+
   async getAggregatedEquity(): Promise<AggregatedEquity> {
-    const settled = await Promise.allSettled(
+    const results = await Promise.all(
       Array.from(this.entries.values()).map(async ({ account }) => {
-        const info = await account.getAccount()
-        return { id: account.id, label: account.label, info }
+        try {
+          const info = await account.getAccount()
+          return { id: account.id, label: account.label, info }
+        } catch (err) {
+          const now = Date.now()
+          const lastWarned = this.equityWarnedAt.get(account.id) ?? 0
+          if (now - lastWarned > AccountManager.EQUITY_WARN_INTERVAL_MS) {
+            console.warn(`getAggregatedEquity: ${account.id} failed, skipping:`, err)
+            this.equityWarnedAt.set(account.id, now)
+          }
+          return { id: account.id, label: account.label, info: null }
+        }
       }),
     )
 
@@ -104,12 +118,8 @@ export class AccountManager {
     let totalRealizedPnL = 0
     const accounts: AggregatedEquity['accounts'] = []
 
-    for (const result of settled) {
-      if (result.status === 'rejected') {
-        console.warn('getAggregatedEquity: account query failed, skipping:', result.reason)
-        continue
-      }
-      const { id, label, info } = result.value
+    for (const { id, label, info } of results) {
+      if (!info) continue
       totalEquity += info.equity
       totalCash += info.cash
       totalUnrealizedPnL += info.unrealizedPnL

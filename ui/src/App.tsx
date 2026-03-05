@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar'
 import { ChatPage } from './pages/ChatPage'
 import { PortfolioPage } from './pages/PortfolioPage'
@@ -17,8 +18,22 @@ export type Page =
   | 'trading'
   | 'ai-provider' | 'settings' | 'tools' | 'dev'
 
+/** Page type → URL path mapping. Chat is the root, everything else maps to /slug. */
+export const ROUTES: Record<Page, string> = {
+  'chat': '/',
+  'portfolio': '/portfolio',
+  'events': '/events',
+  'heartbeat': '/heartbeat',
+  'data-sources': '/data-sources',
+  'connectors': '/connectors',
+  'tools': '/tools',
+  'trading': '/trading',
+  'ai-provider': '/ai-provider',
+  'settings': '/settings',
+  'dev': '/dev',
+}
+
 export function App() {
-  const [page, setPage] = useState<Page>('chat')
   const [sseConnected, setSseConnected] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -26,8 +41,6 @@ export function App() {
     <div className="flex h-full">
       <Sidebar
         sseConnected={sseConnected}
-        currentPage={page}
-        onNavigate={setPage}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
@@ -45,17 +58,20 @@ export function App() {
           </button>
           <span className="text-sm font-semibold text-text">Open Alice</span>
         </div>
-        {page === 'chat' && <ChatPage onSSEStatus={setSseConnected} />}
-        {page === 'portfolio' && <PortfolioPage />}
-        {page === 'events' && <EventsPage />}
-        {page === 'heartbeat' && <HeartbeatPage />}
-        {page === 'data-sources' && <DataSourcesPage />}
-        {page === 'connectors' && <ConnectorsPage />}
-        {page === 'trading' && <TradingPage />}
-        {page === 'ai-provider' && <AIProviderPage />}
-        {page === 'settings' && <SettingsPage />}
-        {page === 'tools' && <ToolsPage />}
-        {page === 'dev' && <DevPage />}
+        <Routes>
+          <Route path="/" element={<ChatPage onSSEStatus={setSseConnected} />} />
+          <Route path="/portfolio" element={<PortfolioPage />} />
+          <Route path="/events" element={<EventsPage />} />
+          <Route path="/heartbeat" element={<HeartbeatPage />} />
+          <Route path="/data-sources" element={<DataSourcesPage />} />
+          <Route path="/connectors" element={<ConnectorsPage />} />
+          <Route path="/tools" element={<ToolsPage />} />
+          <Route path="/trading" element={<TradingPage />} />
+          <Route path="/ai-provider" element={<AIProviderPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/dev" element={<DevPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
     </div>
   )

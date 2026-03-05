@@ -1,10 +1,9 @@
-import { useCallback, type ReactNode } from 'react'
-import type { Page } from '../App'
+import { type ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import { type Page, ROUTES } from '../App'
 
 interface SidebarProps {
   sseConnected: boolean
-  currentPage: Page
-  onNavigate: (page: Page) => void
   open: boolean
   onClose: () => void
 }
@@ -154,16 +153,23 @@ const NAV_ITEMS: NavItem[] = [
   },
 ]
 
+// ==================== Helpers ====================
+
+/** Derive active page from current URL path */
+function pathToPage(pathname: string): Page | null {
+  for (const [page, path] of Object.entries(ROUTES) as [Page, string][]) {
+    if (path === pathname) return page
+    // Match root path for chat
+    if (page === 'chat' && pathname === '/') return 'chat'
+  }
+  return null
+}
+
 // ==================== Sidebar ====================
 
-export function Sidebar({ sseConnected, currentPage, onNavigate, open, onClose }: SidebarProps) {
-  const handleNav = useCallback(
-    (page: Page) => {
-      onNavigate(page)
-      onClose()
-    },
-    [onNavigate, onClose],
-  )
+export function Sidebar({ sseConnected, open, onClose }: SidebarProps) {
+  const location = useLocation()
+  const currentPage = pathToPage(location.pathname)
 
   return (
     <>
@@ -198,20 +204,13 @@ export function Sidebar({ sseConnected, currentPage, onNavigate, open, onClose }
         <nav className="flex-1 flex flex-col gap-0.5 px-3">
           {NAV_ITEMS.map((item) => {
             if (isGroup(item)) {
-              const expanded = currentPage.startsWith(`${item.prefix}/`)
+              const expanded = location.pathname.startsWith(`/${item.prefix}`)
               return (
                 <div key={item.prefix}>
                   {/* Group parent */}
-                  <button
-                    onClick={() => {
-                      if (expanded) {
-                        // Already expanded — collapse by navigating away is weird,
-                        // so just toggle to first child (no-op if already there)
-                        // In practice, clicking the active group header does nothing special
-                      } else {
-                        handleNav(item.children[0].page)
-                      }
-                    }}
+                  <Link
+                    to={ROUTES[item.children[0].page]}
+                    onClick={onClose}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-left ${
                       expanded
                         ? 'text-text'
@@ -221,7 +220,7 @@ export function Sidebar({ sseConnected, currentPage, onNavigate, open, onClose }
                     <span className="flex items-center justify-center w-5 h-5">{item.icon(expanded)}</span>
                     <span className="flex-1">{item.label}</span>
                     <Chevron expanded={expanded} />
-                  </button>
+                  </Link>
 
                   {/* Children — animate height */}
                   <div
@@ -232,9 +231,10 @@ export function Sidebar({ sseConnected, currentPage, onNavigate, open, onClose }
                     {item.children.map((child) => {
                       const isActive = currentPage === child.page
                       return (
-                        <button
+                        <Link
                           key={child.page}
-                          onClick={() => handleNav(child.page)}
+                          to={ROUTES[child.page]}
+                          onClick={onClose}
                           className={`w-full flex items-center pl-11 pr-3 py-1.5 rounded-lg text-[13px] transition-colors text-left ${
                             isActive
                               ? 'bg-bg-tertiary text-text'
@@ -242,7 +242,7 @@ export function Sidebar({ sseConnected, currentPage, onNavigate, open, onClose }
                           }`}
                         >
                           {child.label}
-                        </button>
+                        </Link>
                       )
                     })}
                   </div>
@@ -253,9 +253,10 @@ export function Sidebar({ sseConnected, currentPage, onNavigate, open, onClose }
             // Leaf item
             const isActive = currentPage === item.page
             return (
-              <button
+              <Link
                 key={item.page}
-                onClick={() => handleNav(item.page)}
+                to={ROUTES[item.page]}
+                onClick={onClose}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-left ${
                   isActive
                     ? 'bg-bg-tertiary text-text'
@@ -264,7 +265,7 @@ export function Sidebar({ sseConnected, currentPage, onNavigate, open, onClose }
               >
                 <span className="flex items-center justify-center w-5 h-5">{item.icon(isActive)}</span>
                 {item.label}
-              </button>
+              </Link>
             )
           })}
         </nav>
