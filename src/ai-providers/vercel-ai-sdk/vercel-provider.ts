@@ -18,6 +18,7 @@ import { createChannel } from '../../core/async-channel.js'
 
 export class VercelAIProvider implements GenerateProvider {
   readonly inputKind = 'messages' as const
+  readonly providerTag = 'vercel-ai' as const
   private cachedKey: string | null = null
   private cachedToolCount: number = 0
   private cachedSystemPrompt: string | null = null

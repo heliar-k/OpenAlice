@@ -21,6 +21,7 @@ import { buildAgentSdkMcpServer } from './tool-bridge.js'
 
 export class AgentSdkProvider implements GenerateProvider {
   readonly inputKind = 'text' as const
+  readonly providerTag = 'agent-sdk' as const
 
   constructor(
     private getTools: () => Promise<Record<string, Tool>>,

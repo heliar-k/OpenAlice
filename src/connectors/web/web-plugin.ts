@@ -142,7 +142,7 @@ export class WebPlugin implements Plugin {
           { type: 'text', text: payload.text },
           ...media.map((m) => ({ type: 'image' as const, url: m.url })),
         ]
-        await session.appendAssistant(blocks, 'vercel-ai', {
+        await session.appendAssistant(blocks, 'notification', {
           kind: payload.kind,
           source: payload.source,
         })
@@ -189,7 +189,7 @@ export class WebPlugin implements Plugin {
           { type: 'text', text: result.text },
           ...media.map((m) => ({ type: 'image' as const, url: m.url })),
         ]
-        await session.appendAssistant(blocks, 'vercel-ai', {
+        await session.appendAssistant(blocks, 'notification', {
           kind: meta?.kind ?? 'notification',
           source: meta?.source,
         })

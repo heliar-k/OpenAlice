@@ -7,7 +7,7 @@ import type { EngineContext } from '../../../core/types.js'
 import type { AskOptions } from '../../../core/ai-provider.js'
 import { SessionStore, toChatHistory } from '../../../core/session.js'
 import { readWebSubchannels } from '../../../core/config.js'
-import { persistMedia, resolveMediaPath } from '../../../core/media-store.js'
+import { resolveMediaPath } from '../../../core/media-store.js'
 
 export interface SSEClient {
   id: string
@@ -73,12 +73,8 @@ export function createChatRoutes({ ctx, sessions, sseByChannel }: ChatDeps) {
       reply: result.text, durationMs: Date.now() - receivedEntry.ts,
     })
 
-    // Persist media files with content-addressable 3-word names
-    const media: Array<{ type: 'image'; url: string }> = []
-    for (const m of result.media ?? []) {
-      const name = await persistMedia(m.path)
-      media.push({ type: 'image', url: `/api/media/${name}` })
-    }
+    // Media already persisted by AgentCenter — use pre-built URLs
+    const media = (result.mediaUrls ?? []).map(url => ({ type: 'image', url }))
 
     return c.json({ text: result.text, media })
   })

@@ -19,6 +19,7 @@ import { askClaudeCode } from './provider.js'
 
 export class ClaudeCodeProvider implements GenerateProvider {
   readonly inputKind = 'text' as const
+  readonly providerTag = 'claude-code' as const
 
   constructor(
     private systemPrompt?: string,

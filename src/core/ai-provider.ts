@@ -143,6 +143,7 @@ export interface AskOptions {
 export interface ProviderResult {
   text: string
   media: MediaAttachment[]
+  mediaUrls?: string[]
 }
 
 // ==================== GenerateProvider ====================
@@ -173,6 +174,8 @@ export interface GenerateOpts {
 export interface GenerateProvider {
   /** Which input format this provider expects. */
   readonly inputKind: 'text' | 'messages'
+  /** Session log provenance tag. */
+  readonly providerTag: 'vercel-ai' | 'claude-code' | 'agent-sdk'
   /** Stateless one-shot prompt (used for compaction summarization, etc.). */
   ask(prompt: string): Promise<ProviderResult>
   /** Stream events from the backend. Yields tool_use/tool_result/text, then done. */

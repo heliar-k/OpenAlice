@@ -66,7 +66,7 @@ function makeSessionMock(entries: SessionEntry[] = []): SessionStore {
       store.push(e)
       return e
     }),
-    appendAssistant: vi.fn(async (content: string) => {
+    appendAssistant: vi.fn(async (content: string | import('./session.js').ContentBlock[]) => {
       const e: SessionEntry = {
         type: 'assistant',
         message: { role: 'assistant', content },
@@ -177,7 +177,10 @@ describe('AgentCenter', () => {
 
       await agentCenter.askWithSession('hello', session)
 
-      expect(session.appendAssistant).toHaveBeenCalledWith('assistant reply', 'vercel-ai')
+      expect(session.appendAssistant).toHaveBeenCalledWith(
+        [{ type: 'text', text: 'assistant reply' }],
+        'vercel-ai',
+      )
     })
 
     it('returns the generated text and empty media', async () => {

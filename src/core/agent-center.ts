@@ -19,6 +19,7 @@ import type { CompactionConfig } from './compaction.js'
 import { compactIfNeeded } from './compaction.js'
 import type { MediaAttachment } from './types.js'
 import { extractMediaFromToolResultContent } from './media.js'
+import { persistMedia } from './media-store.js'
 import { logToolCall } from '../ai-providers/log-tool-call.js'
 import { stripImageData, buildChatHistoryPrompt, DEFAULT_MAX_HISTORY } from './provider-utils.js'
 
@@ -32,9 +33,6 @@ export interface AgentCenterOpts {
   /** Default max history entries for text-based providers. */
   maxHistoryEntries?: number
 }
-
-/** Tag used when persisting messages to session. */
-type ProviderTag = 'vercel-ai' | 'claude-code' | 'agent-sdk'
 
 // ==================== AgentCenter ====================
 
@@ -176,35 +174,41 @@ export class AgentCenter {
     }
 
     // 7. Persist intermediate messages to session
-    const providerTag = this.resolveProviderTag(provider)
     for (const msg of intermediateMessages) {
       if (msg.role === 'assistant') {
-        await session.appendAssistant(msg.content, providerTag)
+        await session.appendAssistant(msg.content, provider.providerTag)
       } else {
-        await session.appendUser(msg.content, providerTag)
+        await session.appendUser(msg.content, provider.providerTag)
       }
     }
 
-    // 8. Persist final response text
+    // 8. Persist final response as ContentBlock[] (text + media)
     if (!finalResult) throw new Error('AgentCenter: provider stream ended without done event')
-    await session.appendAssistant(finalResult.text, providerTag)
+
+    const allMedia = [...finalResult.media, ...media]
+    const mediaBlocks: ContentBlock[] = []
+    for (const m of allMedia) {
+      try {
+        const name = await persistMedia(m.path)
+        mediaBlocks.push({ type: 'image', url: `/api/media/${name}` })
+      } catch { /* temp file gone — skip */ }
+    }
+
+    const finalBlocks: ContentBlock[] = [
+      { type: 'text', text: finalResult.text },
+      ...mediaBlocks,
+    ]
+    await session.appendAssistant(finalBlocks, provider.providerTag)
 
     // 9. Yield done with merged media
+    const mediaUrls = mediaBlocks.map(b => (b as { type: 'image'; url: string }).url)
     yield {
       type: 'done',
       result: {
         text: finalResult.text,
-        media: [...finalResult.media, ...media],
+        media: allMedia,
+        mediaUrls,
       },
     }
-  }
-
-  /** Determine the session provider tag based on the provider's inputKind. */
-  private resolveProviderTag(provider: { inputKind: string }): ProviderTag {
-    // GenerateRouter stores the original provider references, so we can't
-    // introspect the class name. Use inputKind as a heuristic — text-based
-    // providers are Claude Code or Agent SDK, messages-based is Vercel.
-    // This is good enough; the tag is purely for session log provenance.
-    return provider.inputKind === 'messages' ? 'vercel-ai' : 'claude-code'
   }
 }

@@ -36,7 +36,7 @@ export interface SessionEntry {
   sessionId: string
   timestamp: string
   /** Which provider generated this entry. */
-  provider?: 'vercel-ai' | 'claude-code' | 'agent-sdk' | 'human' | 'compaction'
+  provider?: 'vercel-ai' | 'claude-code' | 'agent-sdk' | 'human' | 'compaction' | 'notification'
   cwd?: string
   /** Arbitrary metadata attached to the entry (e.g. { kind: 'notification', source: 'heartbeat' }). */
   metadata?: Record<string, unknown>
