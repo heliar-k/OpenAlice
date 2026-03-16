@@ -80,9 +80,5 @@ export type {
   GuardRegistryEntry,
 } from './guards/index.js'
 
-// Internal (exported for testing)
-export { createOperationDispatcher } from './operation-dispatcher.js'
-export { createWalletStateBridge } from './wallet-state-bridge.js'
-
 // AI Tool Factory
 export { createTradingTools } from './adapter.js'

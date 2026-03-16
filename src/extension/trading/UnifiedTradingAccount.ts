@@ -26,8 +26,6 @@ import type {
   OrderStatusUpdate,
   SyncResult,
 } from './git/types.js'
-import { createOperationDispatcher } from './operation-dispatcher.js'
-import { createWalletStateBridge } from './wallet-state-bridge.js'
 import { createGuardPipeline, resolveGuards } from './guards/index.js'
 import './contract-ext.js'
 
@@ -119,8 +117,36 @@ export class UnifiedTradingAccount {
     this.platformId = options.platformId
 
     // Wire internals
-    this._getState = createWalletStateBridge(broker)
-    const dispatcher = createOperationDispatcher(broker)
+    this._getState = async (): Promise<GitState> => {
+      const [accountInfo, positions, orders] = await Promise.all([
+        broker.getAccount(),
+        broker.getPositions(),
+        broker.getOrders(),
+      ])
+      return {
+        netLiquidation: accountInfo.netLiquidation,
+        totalCashValue: accountInfo.totalCashValue,
+        unrealizedPnL: accountInfo.unrealizedPnL,
+        realizedPnL: accountInfo.realizedPnL,
+        positions,
+        pendingOrders: orders.filter(o => o.orderState.status === 'Submitted' || o.orderState.status === 'PreSubmitted'),
+      }
+    }
+
+    const dispatcher = async (op: Operation): Promise<unknown> => {
+      switch (op.action) {
+        case 'placeOrder':
+          return broker.placeOrder(op.contract, op.order)
+        case 'modifyOrder':
+          return broker.modifyOrder(op.orderId, op.changes as Parameters<IBroker['modifyOrder']>[1])
+        case 'closePosition':
+          return broker.closePosition(op.contract, op.quantity)
+        case 'cancelOrder':
+          return broker.cancelOrder(op.orderId, op.orderCancel)
+        default:
+          throw new Error(`Unknown operation action: ${(op as { action: string }).action}`)
+      }
+    }
     const guards = resolveGuards(options.guards ?? [])
     const guardedDispatcher = createGuardPipeline(dispatcher, broker, guards)
 
