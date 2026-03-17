@@ -9,9 +9,8 @@ import { Contract, OrderState } from '@traderalice/ibkr'
 import '../../contract-ext.js'
 
 /** Build a fully qualified IBKR Contract for an Alpaca ticker. */
-export function makeContract(ticker: string, provider: string): Contract {
+export function makeContract(ticker: string): Contract {
   const c = new Contract()
-  c.aliceId = `${provider}-${ticker}`
   c.symbol = ticker
   c.secType = 'STK'
   c.exchange = 'SMART'
@@ -28,12 +27,9 @@ export function parseAliceId(aliceId: string, provider: string): string | null {
 
 /**
  * Resolve a Contract to an Alpaca ticker symbol.
- * Accepts: aliceId, or symbol (+ optional secType check).
+ * Uses symbol directly. aliceId is managed by UTA layer, not broker.
  */
-export function resolveSymbol(contract: Contract, provider: string): string | null {
-  if (contract.aliceId) {
-    return parseAliceId(contract.aliceId, provider)
-  }
+export function resolveSymbol(contract: Contract): string | null {
   if (contract.symbol) {
     // If secType is specified and not STK, not our domain
     if (contract.secType && contract.secType !== 'STK') return null

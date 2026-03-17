@@ -54,16 +54,16 @@ describe('CcxtBroker — Bybit e2e', () => {
     if (!broker) return
     const results = await broker.searchContracts('ETH')
     expect(results.length).toBeGreaterThan(0)
-    const perp = results.find(r => r.contract.aliceId?.includes('USDT'))
+    const perp = results.find(r => r.contract.localSymbol?.includes('USDT:USDT'))
     expect(perp).toBeDefined()
-    console.log(`  found ${results.length} ETH contracts, perp: ${perp!.contract.aliceId}`)
+    console.log(`  found ${results.length} ETH contracts, perp: ${perp!.contract.localSymbol}`)
   })
 
   it('places market buy 0.01 ETH → execution returned', async () => {
     if (!broker) return
 
     const matches = await broker.searchContracts('ETH')
-    const ethPerp = matches.find(m => m.contract.aliceId?.includes('USDT'))
+    const ethPerp = matches.find(m => m.contract.localSymbol?.includes('USDT:USDT'))
     if (!ethPerp) { console.log('  no ETH/USDT perp, skipping'); return }
 
     // Diagnostic: see raw CCXT createOrder response
@@ -108,7 +108,7 @@ describe('CcxtBroker — Bybit e2e', () => {
     if (!broker) return
 
     const matches = await broker.searchContracts('ETH')
-    const ethPerp = matches.find(m => m.contract.aliceId?.includes('USDT'))
+    const ethPerp = matches.find(m => m.contract.localSymbol?.includes('USDT:USDT'))
     if (!ethPerp) return
 
     const result = await broker.closePosition(ethPerp.contract, new Decimal('0.01'))
@@ -121,7 +121,7 @@ describe('CcxtBroker — Bybit e2e', () => {
 
     // Place a small order to get an orderId
     const matches = await broker.searchContracts('ETH')
-    const ethPerp = matches.find(m => m.contract.aliceId?.includes('USDT'))
+    const ethPerp = matches.find(m => m.contract.localSymbol?.includes('USDT:USDT'))
     if (!ethPerp) return
 
     const order = new Order()

@@ -56,9 +56,10 @@ describe('AlpacaBroker — Paper e2e', () => {
     if (!broker) return
     const results = await broker.searchContracts('AAPL')
     expect(results.length).toBeGreaterThan(0)
-    expect(results[0].contract.aliceId).toBe('alpaca-AAPL')
     expect(results[0].contract.symbol).toBe('AAPL')
-    console.log(`  found: ${results[0].contract.aliceId}, secType: ${results[0].contract.secType}`)
+    // Broker no longer sets aliceId — that's UTA's job
+    expect(results[0].contract.aliceId).toBeUndefined()
+    console.log(`  found: ${results[0].contract.symbol}, secType: ${results[0].contract.secType}`)
   })
 
   it('fetches AAPL quote with valid prices', async () => {

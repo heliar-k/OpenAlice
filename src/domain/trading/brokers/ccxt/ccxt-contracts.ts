@@ -64,7 +64,6 @@ export function makeOrderState(ccxtStatus: string | undefined): OrderState {
  */
 export function marketToContract(market: CcxtMarket, exchangeName: string): Contract {
   const c = new Contract()
-  c.aliceId = `${exchangeName}-${encodeSymbol(market.symbol)}`
   c.symbol = market.base
   c.secType = ccxtTypeToSecType(market.type)
   c.exchange = exchangeName
@@ -83,21 +82,15 @@ export function aliceIdToCcxt(aliceId: string, exchangeName: string): string | n
 
 /**
  * Resolve a Contract to a CCXT symbol for API calls.
- * Tries: aliceId → localSymbol → symbol as CCXT key → search by base+secType.
+ * Tries: localSymbol → symbol as CCXT key → search by base+secType.
+ * aliceId is managed by UTA layer; broker uses localSymbol/symbol for resolution.
  */
 export function contractToCcxt(
   contract: Contract,
   markets: Record<string, CcxtMarket>,
   exchangeName: string,
 ): string | null {
-  // 1. aliceId → decode → direct markets lookup (unique, no ambiguity)
-  if (contract.aliceId) {
-    const ccxtSymbol = aliceIdToCcxt(contract.aliceId, exchangeName)
-    if (ccxtSymbol && markets[ccxtSymbol]) return ccxtSymbol
-    return null
-  }
-
-  // 2. localSymbol is the CCXT unified symbol
+  // 1. localSymbol is the CCXT unified symbol
   if (contract.localSymbol && markets[contract.localSymbol]) {
     return contract.localSymbol
   }

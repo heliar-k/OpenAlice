@@ -205,7 +205,6 @@ describe('AlpacaBroker — getContractDetails()', () => {
     const details = await acc.getContractDetails(query)
     expect(details).not.toBeNull()
     expect(details!.contract.symbol).toBe('AAPL')
-    expect(details!.contract.aliceId).toBe('alpaca-AAPL')
     expect(details!.validExchanges).toBe('SMART,NYSE,NASDAQ,ARCA')
     expect(details!.orderTypes).toBe('MKT,LMT,STP,STP LMT,TRAIL')
     expect(details!.stockType).toBe('COMMON')

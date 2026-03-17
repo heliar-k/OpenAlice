@@ -202,7 +202,7 @@ describe('CcxtBroker — placeOrder notional', () => {
     })
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-BTC_USDT.USDT'
+    contract.localSymbol = 'BTC/USDT:USDT'
     contract.symbol = 'BTC/USDT:USDT'
     contract.secType = 'CRYPTO_PERP'
     contract.exchange = 'bybit'
@@ -228,7 +228,7 @@ describe('CcxtBroker — placeOrder notional', () => {
     })
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-BTC_USDT.USDT'
+    contract.localSymbol = 'BTC/USDT:USDT'
     contract.symbol = 'BTC/USDT:USDT'
     contract.secType = 'CRYPTO_PERP'
     contract.exchange = 'bybit'
@@ -258,7 +258,7 @@ describe('CcxtBroker — placeOrder async', () => {
     })
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-ETH_USDT.USDT'
+    contract.localSymbol = 'ETH/USDT:USDT'
     const order = new Order()
     order.action = 'SELL'
     order.orderType = 'MKT'
@@ -323,7 +323,7 @@ describe('CcxtBroker — getContractDetails', () => {
     setInitialized(acc, { 'BTC/USDT:USDT': market })
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-BTC_USDT.USDT'
+    contract.localSymbol = 'BTC/USDT:USDT'
 
     const details = await acc.getContractDetails(contract)
     expect(details).not.toBeNull()
@@ -338,7 +338,7 @@ describe('CcxtBroker — getContractDetails', () => {
     setInitialized(acc, {})
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-NONEXISTENT'
+    contract.localSymbol = 'NONEXISTENT/USDT'
 
     const details = await acc.getContractDetails(contract)
     expect(details).toBeNull()
@@ -359,7 +359,7 @@ describe('CcxtBroker — placeOrder qty-based', () => {
 
   function makeContract(): Contract {
     const contract = new Contract()
-    contract.aliceId = 'bybit-BTC_USDT.USDT'
+    contract.localSymbol = 'BTC/USDT:USDT'
     contract.symbol = 'BTC/USDT:USDT'
     contract.secType = 'CRYPTO_PERP'
     contract.exchange = 'bybit'
@@ -414,7 +414,7 @@ describe('CcxtBroker — placeOrder qty-based', () => {
 
   it('returns error when contract cannot be resolved', async () => {
     const contract = new Contract()
-    contract.aliceId = 'bybit-NONEXISTENT'
+    contract.localSymbol = 'NONEXISTENT/USDT'
 
     const order = new Order()
     order.action = 'BUY'
@@ -499,7 +499,7 @@ describe('CcxtBroker — closePosition', () => {
     })
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-BTC_USDT.USDT'
+    contract.localSymbol = 'BTC/USDT:USDT'
 
     const result = await acc.closePosition(contract)
     expect(result.success).toBe(true)
@@ -515,7 +515,7 @@ describe('CcxtBroker — closePosition', () => {
     ;(acc as any).exchange.fetchPositions = vi.fn().mockResolvedValue([])
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-NONEXISTENT'
+    contract.localSymbol = 'NONEXISTENT/USDT'
 
     const result = await acc.closePosition(contract)
     expect(result.success).toBe(false)
@@ -532,7 +532,7 @@ describe('CcxtBroker — precision', () => {
     ;(acc as any).exchange.createOrder = vi.fn().mockResolvedValue({ id: 'ord-1', status: 'open' })
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-ETH_USDT.USDT'
+    contract.localSymbol = 'ETH/USDT:USDT'
     const order = new Order()
     order.action = 'BUY'
     order.orderType = 'MKT'
@@ -590,7 +590,7 @@ describe('CcxtBroker — closePosition reduceOnly', () => {
     ;(acc as any).exchange.createOrder = vi.fn().mockResolvedValue({ id: 'close-1', status: 'closed' })
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-ETH_USDT.USDT'
+    contract.localSymbol = 'ETH/USDT:USDT'
     await acc.closePosition(contract)
 
     // createOrder 6th arg is params
@@ -771,7 +771,7 @@ describe('CcxtBroker — getQuote', () => {
     })
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-BTC_USDT.USDT'
+    contract.localSymbol = 'BTC/USDT:USDT'
 
     const quote = await acc.getQuote(contract)
     expect(quote.last).toBe(60000)
@@ -788,7 +788,7 @@ describe('CcxtBroker — getQuote', () => {
     setInitialized(acc, {})
 
     const contract = new Contract()
-    contract.aliceId = 'bybit-NONEXISTENT'
+    contract.localSymbol = 'NONEXISTENT/USDT'
 
     await expect(acc.getQuote(contract)).rejects.toThrow('Cannot resolve contract')
   })

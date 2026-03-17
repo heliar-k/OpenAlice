@@ -359,16 +359,16 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
     this.ensureWritable()
 
     const positions = await this.getPositions()
+    const ccxtSymbol = contractToCcxt(contract, this.exchange.markets as Record<string, CcxtMarket>, this.exchangeName)
     const symbol = contract.symbol?.toUpperCase()
-    const aliceId = contract.aliceId
 
     const pos = positions.find(p =>
-      (aliceId && p.contract.aliceId === aliceId) ||
+      (ccxtSymbol && p.contract.localSymbol === ccxtSymbol) ||
       (symbol && p.contract.symbol === symbol),
     )
 
     if (!pos) {
-      return { success: false, error: `No open position for ${aliceId ?? symbol ?? 'unknown'}` }
+      return { success: false, error: `No open position for ${ccxtSymbol ?? symbol ?? 'unknown'}` }
     }
 
     const order = new Order()

@@ -182,7 +182,7 @@ describe('UTA — getState', () => {
     broker.setPositions([makePosition()])
 
     // Push a limit order to create a pending entry in git history
-    uta.stagePlaceOrder({ aliceId: 'mock-AAPL', symbol: 'AAPL', side: 'buy', type: 'limit', qty: 5, price: 145 })
+    uta.stagePlaceOrder({ aliceId: 'mock-paper|AAPL', symbol: 'AAPL', side: 'buy', type: 'limit', qty: 5, price: 145 })
     uta.commit('limit buy')
     await uta.push()
 
@@ -435,7 +435,7 @@ describe('UTA — sync', () => {
     const { uta, broker } = createUTA()
 
     // Limit order → MockBroker keeps it pending naturally
-    uta.stagePlaceOrder({ aliceId: 'mock-AAPL', symbol: 'AAPL', side: 'buy', type: 'limit', qty: 10, price: 150 })
+    uta.stagePlaceOrder({ aliceId: 'mock-paper|AAPL', symbol: 'AAPL', side: 'buy', type: 'limit', qty: 10, price: 150 })
     uta.commit('limit buy')
     const pushResult = await uta.push()
     const orderId = pushResult.submitted[0]?.orderId
@@ -454,7 +454,7 @@ describe('UTA — sync', () => {
     const { uta, broker } = createUTA()
 
     // Limit order → pending
-    uta.stagePlaceOrder({ aliceId: 'mock-AAPL', symbol: 'AAPL', side: 'buy', type: 'limit', qty: 10, price: 150 })
+    uta.stagePlaceOrder({ aliceId: 'mock-paper|AAPL', symbol: 'AAPL', side: 'buy', type: 'limit', qty: 10, price: 150 })
     uta.commit('limit buy')
     const pushResult = await uta.push()
     const orderId = pushResult.submitted[0]?.orderId
