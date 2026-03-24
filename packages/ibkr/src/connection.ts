@@ -47,14 +47,25 @@ export class Connection extends EventEmitter {
       })
 
       this.socket.on('close', () => {
+        // Guard: if socket is already null, disconnect() already handled cleanup.
+        // Without this check, connectionClosed() would be called twice when
+        // disconnect() is invoked (once by disconnect, once by the close event).
+        if (this.socket === null) return
         this.socket = null
         if (this.wrapper) {
           this.wrapper.connectionClosed()
         }
       })
 
-      this.socket.on('error', (err: Error) => {
-        this.emit('error', err)
+      // Python equivalent: recvMsg() catches socket.error → calls self.disconnect().
+      // We do the same — disconnect the socket so the 'close' path or the direct
+      // disconnect() call triggers wrapper.connectionClosed(), which lets upper
+      // layers (UTA health tracking) handle the failure gracefully.
+      //
+      // DO NOT emit('error') here — no listener exists in the call chain, and
+      // Node's EventEmitter crashes the process on unhandled 'error' events.
+      this.socket.on('error', () => {
+        this.disconnect()
       })
 
       this.socket.connect(this.port, this.host, () => {
@@ -72,9 +83,10 @@ export class Connection extends EventEmitter {
 
   disconnect(): void {
     if (this.socket !== null) {
-      this.socket.destroy()
-      this.socket = null
-      if (this.wrapper) {
+      const s = this.socket
+      this.socket = null        // Set null BEFORE destroy — the 'close' event
+      s.destroy()               // handler checks this to avoid double-calling
+      if (this.wrapper) {       // wrapper.connectionClosed().
         this.wrapper.connectionClosed()
       }
     }
