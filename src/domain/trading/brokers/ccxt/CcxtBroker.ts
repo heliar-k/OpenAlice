@@ -336,13 +336,23 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
   async cancelOrder(orderId: string): Promise<PlaceOrderResult> {
     this.ensureInit()
 
+    const ccxtSymbol = this.orderSymbolCache.get(orderId)
+    // Try regular cancel first, then conditional order cancel.
     try {
-      const ccxtSymbol = this.orderSymbolCache.get(orderId)
       await this.exchange.cancelOrder(orderId, ccxtSymbol)
       const orderState = new OrderState()
       orderState.status = 'Cancelled'
       return { success: true, orderId, orderState }
     } catch (err) {
+      // If regular cancel failed and we have a symbol, try as conditional order
+      if (ccxtSymbol) {
+        try {
+          await this.exchange.cancelOrder(orderId, ccxtSymbol, { stop: true })
+          const orderState = new OrderState()
+          orderState.status = 'Cancelled'
+          return { success: true, orderId, orderState }
+        } catch { /* fall through to original error */ }
+      }
       return { success: false, error: err instanceof Error ? err.message : String(err) }
     }
   }
@@ -356,8 +366,14 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
         return { success: false, error: `Unknown order ${orderId} — cannot resolve symbol for edit` }
       }
 
-      // editOrder requires type and side — fetch the original order to fill in defaults
-      const original = await this.exchange.fetchOrder(orderId, ccxtSymbol)
+      // editOrder requires type and side — fetch the original order to fill in defaults.
+      // Try regular order first, then conditional.
+      let original: CcxtOrder
+      try {
+        original = await this.exchange.fetchOrder(orderId, ccxtSymbol)
+      } catch {
+        original = await this.exchange.fetchOrder(orderId, ccxtSymbol, { stop: true })
+      }
       const qty = changes.totalQuantity != null && !changes.totalQuantity.equals(UNSET_DECIMAL) ? parseFloat(changes.totalQuantity.toString()) : original.amount
       const price = changes.lmtPrice !== UNSET_DOUBLE ? changes.lmtPrice : original.price
 
@@ -512,25 +528,21 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
   async getOrder(orderId: string): Promise<OpenOrder | null> {
     this.ensureInit()
 
-
     const ccxtSymbol = this.orderSymbolCache.get(orderId)
     if (!ccxtSymbol) return null
 
+    // Try regular order first, then conditional/trigger order.
+    // Conditional orders (stop-loss, take-profit) live on separate exchange
+    // endpoints and require { stop: true } to be visible.
     try {
-      // Use singular fetchOpenOrder / fetchClosedOrder — they query by orderId directly,
-      // instead of fetching a list and searching. Much more reliable on Bybit.
-      try {
-        const open = await (this.exchange as any).fetchOpenOrder(orderId, ccxtSymbol)
-        return this.convertCcxtOrder(open)
-      } catch { /* not an open order */ }
-      try {
-        const closed = await (this.exchange as any).fetchClosedOrder(orderId, ccxtSymbol)
-        return this.convertCcxtOrder(closed)
-      } catch { /* not found */ }
-      return null
-    } catch {
-      return null
-    }
+      const order = await this.exchange.fetchOrder(orderId, ccxtSymbol)
+      return this.convertCcxtOrder(order)
+    } catch { /* not a regular order */ }
+    try {
+      const order = await this.exchange.fetchOrder(orderId, ccxtSymbol, { stop: true })
+      return this.convertCcxtOrder(order)
+    } catch { /* not found */ }
+    return null
   }
 
   private convertCcxtOrder(o: CcxtOrder): OpenOrder | null {
