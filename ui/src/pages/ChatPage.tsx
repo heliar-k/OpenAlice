@@ -62,38 +62,57 @@ export function ChatPage({ onSSEStatus }: ChatPageProps) {
 
   useEffect(scrollToBottom, [messages, isWaiting, streamSegments, scrollToBottom])
 
-  // Detect user scroll.
-  // Why wheel/touchmove: during streaming, scrollIntoView fires every render
-  // and races the async `scroll` event — user's scroll intent is overwritten
-  // before userScrolledUp can flip. Wheel/touchmove fire synchronously, so we
-  // set the flag before the next auto-scroll can run.
+  // Scroll lock plumbing.
+  //
+  // The lock flag `userScrolledUp` is driven ONLY by user-intent events
+  // (wheel, touch, the explicit scroll-to-bottom button). onScroll handles
+  // cosmetic UI state only — it must not mutate the lock, otherwise during
+  // streaming the DOM scroll event races user wheel and resets the flag
+  // before the next auto-scroll tick sees the user's intent.
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+
     const onScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = el
-      const isUp = scrollHeight - scrollTop - clientHeight > 20
-      userScrolledUp.current = isUp
-      setShowScrollBtn(isUp)
-      if (!isUp) setNewMsgCount(0)
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+      setShowScrollBtn(distance > 20)
+      if (distance <= 5) setNewMsgCount(0)
     }
+
+    // After a down-direction scroll, read the post-scroll position
+    // (wheel events fire before the browser applies the delta, so we need
+    // a frame of latency to see the real scrollTop).
+    const unlockIfAtBottom = () => {
+      requestAnimationFrame(() => {
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+        if (distance <= 5) userScrolledUp.current = false
+      })
+    }
+
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY < 0) {
         userScrolledUp.current = true
         setShowScrollBtn(true)
+      } else if (e.deltaY > 0) {
+        unlockIfAtBottom()
       }
     }
+
     const onTouchMove = () => {
       userScrolledUp.current = true
       setShowScrollBtn(true)
     }
+    const onTouchEnd = () => { unlockIfAtBottom() }
+
     el.addEventListener('scroll', onScroll, { passive: true })
     el.addEventListener('wheel', onWheel, { passive: true })
     el.addEventListener('touchmove', onTouchMove, { passive: true })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
     return () => {
       el.removeEventListener('scroll', onScroll)
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
     }
   }, [])
 
