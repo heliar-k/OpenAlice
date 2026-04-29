@@ -1,5 +1,5 @@
 import { fetchJson } from './client'
-import type { TradingAccount, AccountSummary, AccountInfo, Position, WalletCommitLog, ReconnectResult, AccountConfig, WalletStatus, WalletPushResult, WalletRejectResult, TestConnectionResult, BrokerPreset, UTASnapshotSummary, EquityCurvePoint } from './types'
+import type { TradingAccount, UTASummary, AccountInfo, Position, WalletCommitLog, ReconnectResult, UTAConfig, WalletStatus, WalletPushResult, WalletRejectResult, TestConnectionResult, BrokerPreset, UTASnapshotSummary, EquityCurvePoint } from './types'
 
 /** One contract returned by the broker-side fuzzy search. Shape mirrors what
  *  the AI tool emits — same canonical aliceId for downstream order routing. */
@@ -22,21 +22,21 @@ export interface ContractSearchHit {
 export interface ContractSearchResponse {
   results: ContractSearchHit[]
   count: number
-  /** 0 when no UTAs are configured; lets the UI nudge towards /trading/config. */
-  accountsConfigured?: number
+  /** 0 when no UTAs are configured; lets the UI nudge towards /trading. */
+  utasConfigured?: number
 }
 
 // ==================== Unified Trading API ====================
 
 export const tradingApi = {
-  // ==================== Accounts ====================
+  // ==================== UTAs (listing + per-UTA reads) ====================
 
-  async listAccounts(): Promise<{ accounts: TradingAccount[] }> {
-    return fetchJson('/api/trading/accounts')
+  async listUTAs(): Promise<{ utas: TradingAccount[] }> {
+    return fetchJson('/api/trading/uta')
   },
 
-  async listAccountSummaries(): Promise<{ accounts: AccountSummary[] }> {
-    return fetchJson('/api/trading/accounts')
+  async listUTASummaries(): Promise<{ utas: UTASummary[] }> {
+    return fetchJson('/api/trading/uta')
   },
 
   async equity(): Promise<{ totalEquity: string; totalCash: string; totalUnrealizedPnL: string; totalRealizedPnL: string; accounts: Array<{ id: string; label: string; equity: string; cash: string }> }> {
@@ -49,47 +49,49 @@ export const tradingApi = {
     return fetchJson('/api/trading/fx-rates')
   },
 
-  // ==================== Per-account ====================
+  // ==================== Per-UTA ====================
 
-  async reconnectAccount(accountId: string): Promise<ReconnectResult> {
-    const res = await fetch(`/api/trading/accounts/${accountId}/reconnect`, { method: 'POST' })
+  async reconnectUTA(utaId: string): Promise<ReconnectResult> {
+    const res = await fetch(`/api/trading/uta/${utaId}/reconnect`, { method: 'POST' })
     return res.json()
   },
 
-  async accountInfo(accountId: string): Promise<AccountInfo> {
-    return fetchJson(`/api/trading/accounts/${accountId}/account`)
+  /** Broker-side account info (cash, equity, margin) for a given UTA.
+   *  Note `account` here is the *broker* account, distinct from the UTA. */
+  async utaAccount(utaId: string): Promise<AccountInfo> {
+    return fetchJson(`/api/trading/uta/${utaId}/account`)
   },
 
-  async positions(accountId: string): Promise<{ positions: Position[] }> {
-    return fetchJson(`/api/trading/accounts/${accountId}/positions`)
+  async utaPositions(utaId: string): Promise<{ positions: Position[] }> {
+    return fetchJson(`/api/trading/uta/${utaId}/positions`)
   },
 
-  async orders(accountId: string): Promise<{ orders: unknown[] }> {
-    return fetchJson(`/api/trading/accounts/${accountId}/orders`)
+  async utaOrders(utaId: string): Promise<{ orders: unknown[] }> {
+    return fetchJson(`/api/trading/uta/${utaId}/orders`)
   },
 
-  async marketClock(accountId: string): Promise<{ isOpen: boolean; nextOpen: string; nextClose: string }> {
-    return fetchJson(`/api/trading/accounts/${accountId}/market-clock`)
+  async marketClock(utaId: string): Promise<{ isOpen: boolean; nextOpen: string; nextClose: string }> {
+    return fetchJson(`/api/trading/uta/${utaId}/market-clock`)
   },
 
-  async walletLog(accountId: string, limit = 20, symbol?: string): Promise<{ commits: WalletCommitLog[] }> {
+  async walletLog(utaId: string, limit = 20, symbol?: string): Promise<{ commits: WalletCommitLog[] }> {
     const params = new URLSearchParams({ limit: String(limit) })
     if (symbol) params.set('symbol', symbol)
-    return fetchJson(`/api/trading/accounts/${accountId}/wallet/log?${params}`)
+    return fetchJson(`/api/trading/uta/${utaId}/wallet/log?${params}`)
   },
 
-  async walletShow(accountId: string, hash: string): Promise<unknown> {
-    return fetchJson(`/api/trading/accounts/${accountId}/wallet/show/${hash}`)
+  async walletShow(utaId: string, hash: string): Promise<unknown> {
+    return fetchJson(`/api/trading/uta/${utaId}/wallet/show/${hash}`)
   },
 
   // ==================== Wallet operations ====================
 
-  async walletStatus(accountId: string): Promise<WalletStatus> {
-    return fetchJson(`/api/trading/accounts/${accountId}/wallet/status`)
+  async walletStatus(utaId: string): Promise<WalletStatus> {
+    return fetchJson(`/api/trading/uta/${utaId}/wallet/status`)
   },
 
-  async walletReject(accountId: string, reason?: string): Promise<WalletRejectResult> {
-    const res = await fetch(`/api/trading/accounts/${accountId}/wallet/reject`, {
+  async walletReject(utaId: string, reason?: string): Promise<WalletRejectResult> {
+    const res = await fetch(`/api/trading/uta/${utaId}/wallet/reject`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(reason ? { reason } : {}),
@@ -101,8 +103,8 @@ export const tradingApi = {
     return res.json()
   },
 
-  async walletPush(accountId: string): Promise<WalletPushResult> {
-    const res = await fetch(`/api/trading/accounts/${accountId}/wallet/push`, { method: 'POST' })
+  async walletPush(utaId: string): Promise<WalletPushResult> {
+    const res = await fetch(`/api/trading/uta/${utaId}/wallet/push`, { method: 'POST' })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.error || `Push failed (${res.status})`)
@@ -118,43 +120,43 @@ export const tradingApi = {
 
   // ==================== Trading Config CRUD ====================
 
-  async loadTradingConfig(): Promise<{ accounts: AccountConfig[] }> {
+  async loadTradingConfig(): Promise<{ utas: UTAConfig[] }> {
     return fetchJson('/api/trading/config')
   },
 
-  async upsertAccount(account: AccountConfig): Promise<AccountConfig> {
-    const res = await fetch(`/api/trading/config/accounts/${account.id}`, {
+  async upsertUTA(uta: UTAConfig): Promise<UTAConfig> {
+    const res = await fetch(`/api/trading/config/uta/${uta.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(account),
+      body: JSON.stringify(uta),
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      throw new Error(body.error || `Failed to save account (${res.status})`)
+      throw new Error(body.error || `Failed to save UTA (${res.status})`)
     }
     return res.json()
   },
 
-  async deleteAccount(id: string): Promise<void> {
-    const res = await fetch(`/api/trading/config/accounts/${id}`, { method: 'DELETE' })
+  async deleteUTA(id: string): Promise<void> {
+    const res = await fetch(`/api/trading/config/uta/${id}`, { method: 'DELETE' })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      throw new Error(body.error || `Failed to delete account (${res.status})`)
+      throw new Error(body.error || `Failed to delete UTA (${res.status})`)
     }
   },
 
   // ==================== Snapshots ====================
 
-  async snapshots(accountId: string, opts?: { limit?: number; startTime?: string; endTime?: string }): Promise<{ snapshots: UTASnapshotSummary[] }> {
+  async snapshots(utaId: string, opts?: { limit?: number; startTime?: string; endTime?: string }): Promise<{ snapshots: UTASnapshotSummary[] }> {
     const params = new URLSearchParams()
     if (opts?.limit) params.set('limit', String(opts.limit))
     if (opts?.startTime) params.set('startTime', opts.startTime)
     if (opts?.endTime) params.set('endTime', opts.endTime)
-    return fetchJson(`/api/trading/accounts/${accountId}/snapshots?${params}`)
+    return fetchJson(`/api/trading/uta/${utaId}/snapshots?${params}`)
   },
 
-  async deleteSnapshot(accountId: string, timestamp: string): Promise<{ success: boolean }> {
-    const res = await fetch(`/api/trading/accounts/${accountId}/snapshots/${encodeURIComponent(timestamp)}`, { method: 'DELETE' })
+  async deleteSnapshot(utaId: string, timestamp: string): Promise<{ success: boolean }> {
+    const res = await fetch(`/api/trading/uta/${utaId}/snapshots/${encodeURIComponent(timestamp)}`, { method: 'DELETE' })
     return res.json()
   },
 
@@ -169,13 +171,9 @@ export const tradingApi = {
   // ==================== Contract search ====================
 
   /**
-   * Heuristic broker-side search across all configured accounts. Used by the
+   * Heuristic broker-side search across all configured UTAs. Used by the
    * Market workbench to surface tradeable contracts matching a data-vendor
    * symbol — the bridge is intentionally fuzzy / display-only.
-   *
-   * `assetClass` lets the backend pick the right normalization rule (e.g.
-   * crypto/currency strip the quote-currency suffix). See
-   * `src/domain/trading/contract-search-rules.md` for the rule set.
    */
   async searchContracts(
     pattern: string,
@@ -188,11 +186,11 @@ export const tradingApi = {
 
   // ==================== Connection Testing ====================
 
-  async testConnection(account: AccountConfig): Promise<TestConnectionResult> {
+  async testConnection(uta: UTAConfig): Promise<TestConnectionResult> {
     const res = await fetch('/api/trading/config/test-connection', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(account),
+      body: JSON.stringify(uta),
     })
     return res.json()
   },

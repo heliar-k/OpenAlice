@@ -237,7 +237,7 @@ export interface BrokerHealthInfo {
   disabled: boolean
 }
 
-export interface AccountSummary {
+export interface UTASummary {
   id: string
   label: string
   capabilities: { supportedSecTypes: string[]; supportedOrderTypes: string[] }
@@ -348,7 +348,12 @@ export interface ToolCallRecord {
 
 // ==================== Trading Config ====================
 
-export interface AccountConfig {
+/**
+ * One Unified Trading Account configuration record. The user-facing
+ * concept that wraps a broker connection — distinct from `AccountInfo`,
+ * which is broker-side (cash, equity, margin returned by the broker).
+ */
+export interface UTAConfig {
   id: string
   label?: string
   /** Broker preset id — resolves to engine + form schema on the backend. */
