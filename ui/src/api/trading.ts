@@ -1,5 +1,5 @@
 import { fetchJson } from './client'
-import type { TradingAccount, AccountSummary, AccountInfo, Position, WalletCommitLog, ReconnectResult, AccountConfig, WalletStatus, WalletPushResult, WalletRejectResult, TestConnectionResult, BrokerTypeInfo, BrokerConfigField, UTASnapshotSummary, EquityCurvePoint } from './types'
+import type { TradingAccount, AccountSummary, AccountInfo, Position, WalletCommitLog, ReconnectResult, AccountConfig, WalletStatus, WalletPushResult, WalletRejectResult, TestConnectionResult, BrokerPreset, UTASnapshotSummary, EquityCurvePoint } from './types'
 
 /** One contract returned by the broker-side fuzzy search. Shape mirrors what
  *  the AI tool emits — same canonical aliceId for downstream order routing. */
@@ -110,18 +110,10 @@ export const tradingApi = {
     return res.json()
   },
 
-  // ==================== Broker Types ====================
+  // ==================== Broker Presets ====================
 
-  async getBrokerTypes(): Promise<{ brokerTypes: BrokerTypeInfo[] }> {
-    return fetchJson('/api/trading/config/broker-types')
-  },
-
-  async getCcxtExchanges(): Promise<{ exchanges: string[] }> {
-    return fetchJson('/api/trading/config/ccxt/exchanges')
-  },
-
-  async getCcxtCredentialFields(exchange: string): Promise<{ fields: BrokerConfigField[] }> {
-    return fetchJson(`/api/trading/config/ccxt/exchanges/${encodeURIComponent(exchange)}/credentials`)
+  async getBrokerPresets(): Promise<{ presets: BrokerPreset[] }> {
+    return fetchJson('/api/trading/config/broker-presets')
   },
 
   // ==================== Trading Config CRUD ====================

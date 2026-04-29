@@ -351,24 +351,19 @@ export interface ToolCallRecord {
 export interface AccountConfig {
   id: string
   label?: string
-  type: string
+  /** Broker preset id — resolves to engine + form schema on the backend. */
+  presetId: string
   enabled: boolean
   guards: GuardEntry[]
-  brokerConfig: Record<string, unknown>
+  /** User-filled form values for the preset's schema. */
+  presetConfig: Record<string, unknown>
 }
 
-// ==================== Broker Type Metadata (from /broker-types endpoint) ====================
+// ==================== Broker Preset Metadata (from /broker-presets endpoint) ====================
 
-export interface BrokerConfigField {
-  name: string
-  type: 'text' | 'password' | 'number' | 'boolean' | 'select'
+export interface ModeOption {
+  id: string
   label: string
-  placeholder?: string
-  default?: unknown
-  required?: boolean
-  options?: Array<{ value: string; label: string }>
-  description?: string
-  sensitive?: boolean
 }
 
 export interface SubtitleField {
@@ -378,17 +373,20 @@ export interface SubtitleField {
   prefix?: string
 }
 
-export interface BrokerTypeInfo {
-  type: string
-  name: string
+export interface BrokerPreset {
+  id: string
+  label: string
   description: string
-  /** Multi-line setup guide shown in the New Account wizard. Paragraphs separated by `\n\n`. */
-  setupGuide?: string
+  category: 'crypto' | 'securities' | 'custom'
+  hint?: string
+  defaultName: string
   badge: string
   badgeColor: string
-  fields: BrokerConfigField[]
-  subtitleFields: SubtitleField[]
+  engine: 'ccxt' | 'alpaca' | 'ibkr'
   guardCategory: 'crypto' | 'securities'
+  modes?: ModeOption[]
+  subtitleFields: SubtitleField[]
+  schema: JsonSchema
 }
 
 export interface GuardEntry {

@@ -218,32 +218,40 @@ describe('readAccountsConfig', () => {
     expect(mockWriteFile).toHaveBeenCalledTimes(1)
   })
 
-  it('parses ccxt account from file', async () => {
-    fileReturns([{ id: 'bybit-main', type: 'ccxt', exchange: 'bybit', apiKey: 'key1', apiSecret: 'sec1' }])
+  it('parses preset-shaped accounts from file', async () => {
+    fileReturns([
+      { id: 'okx-main', presetId: 'okx', enabled: true, guards: [], presetConfig: { mode: 'live', apiKey: 'k', secret: 's', password: 'p' } },
+      { id: 'alpaca-paper', presetId: 'alpaca', enabled: true, guards: [], presetConfig: { mode: 'paper', apiKey: 'k', apiSecret: 's' } },
+    ])
     const accounts = await readAccountsConfig()
-    expect(accounts).toHaveLength(1)
-    expect(accounts[0].id).toBe('bybit-main')
-    expect(accounts[0].type).toBe('ccxt')
+    expect(accounts).toHaveLength(2)
+    expect(accounts[0].presetId).toBe('okx')
+    expect(accounts[1].presetId).toBe('alpaca')
   })
 
-  it('parses alpaca account from file', async () => {
-    fileReturns([{ id: 'alpaca-paper', type: 'alpaca', paper: true, apiKey: 'k', apiSecret: 's' }])
-    const accounts = await readAccountsConfig()
-    expect(accounts).toHaveLength(1)
-    expect(accounts[0].type).toBe('alpaca')
+  it('refuses pre-preset (legacy) shape with a clear error and backs up the file', async () => {
+    fileReturns([{ id: 'bybit-main', type: 'ccxt', enabled: true, guards: [], brokerConfig: { exchange: 'bybit', apiKey: 'k', apiSecret: 's' } }])
+    await expect(readAccountsConfig()).rejects.toThrow(/pre-preset format/)
+    // Should write both the backup file and the empty replacement
+    const writePaths = mockWriteFile.mock.calls.map((c) => c[0] as string)
+    expect(writePaths.some((p) => p.endsWith('accounts.json.backup-pre-preset'))).toBe(true)
+    expect(writePaths.some((p) => p.endsWith('accounts.json'))).toBe(true)
   })
 })
 
 describe('writeAccountsConfig', () => {
   it('writes validated accounts to accounts.json', async () => {
-    await writeAccountsConfig([{ id: 'acc-1', type: 'alpaca', enabled: true, guards: [], brokerConfig: { paper: true } }])
+    await writeAccountsConfig([{
+      id: 'acc-1', presetId: 'alpaca', enabled: true, guards: [],
+      presetConfig: { mode: 'paper', apiKey: 'k', apiSecret: 's' },
+    }])
     const filePath = mockWriteFile.mock.calls[0][0] as string
     expect(filePath).toMatch(/accounts\.json$/)
   })
 
   it('throws ZodError for missing required fields', async () => {
     await expect(
-      writeAccountsConfig([{ type: 'alpaca' } as any])
+      writeAccountsConfig([{ presetId: 'alpaca' } as any])
     ).rejects.toThrow()
     expect(mockWriteFile).not.toHaveBeenCalled()
   })

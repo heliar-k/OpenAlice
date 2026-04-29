@@ -274,10 +274,12 @@ const guardConfigSchema = z.object({
 export const accountConfigSchema = z.object({
   id: z.string(),
   label: z.string().optional(),
-  type: z.string(),
+  /** Broker preset id — resolves to engine + form schema via BROKER_PRESET_CATALOG. */
+  presetId: z.string(),
   enabled: z.boolean().default(true),
   guards: z.array(guardConfigSchema).default([]),
-  brokerConfig: z.record(z.string(), z.unknown()).default({}),
+  /** User-filled form values, validated against the preset's own zodSchema. */
+  presetConfig: z.record(z.string(), z.unknown()).default({}),
 })
 
 export const accountsFileSchema = z.array(accountConfigSchema)
@@ -504,26 +506,16 @@ export async function loadConfig(): Promise<Config> {
 
 // ==================== Account Config Loader ====================
 
-/** Common fields that live at the top level, not inside brokerConfig. */
-const BASE_FIELDS = new Set(['id', 'label', 'type', 'guards', 'brokerConfig'])
-
 /**
- * Migrate flat account config (legacy) to nested brokerConfig format.
- * Any field not in BASE_FIELDS gets moved into brokerConfig.
+ * Detect the pre-preset (legacy) account shape: presence of `type` field
+ * (now removed) without the new `presetId` field. Returns true if any
+ * record matches.
  */
-function migrateAccountConfig(raw: Record<string, unknown>): Record<string, unknown> {
-  if (raw.brokerConfig) return raw  // already migrated
-  const migrated: Record<string, unknown> = {}
-  const brokerConfig: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(raw)) {
-    if (BASE_FIELDS.has(k)) {
-      migrated[k] = v
-    } else {
-      brokerConfig[k] = v
-    }
-  }
-  migrated.brokerConfig = brokerConfig
-  return migrated
+function isLegacyAccountShape(raw: unknown[]): boolean {
+  return raw.some((r) => {
+    const o = r as Record<string, unknown>
+    return typeof o['type'] === 'string' && typeof o['presetId'] !== 'string'
+  })
 }
 
 export async function readAccountsConfig(): Promise<AccountConfig[]> {
@@ -534,9 +526,28 @@ export async function readAccountsConfig(): Promise<AccountConfig[]> {
     await writeFile(resolve(CONFIG_DIR, 'accounts.json'), '[]\n')
     return []
   }
-  // Migrate legacy flat format → nested brokerConfig
-  const migrated = (raw as unknown[]).map((item) => migrateAccountConfig(item as Record<string, unknown>))
-  return accountsFileSchema.parse(migrated)
+
+  // Pre-preset shape used `type` + `brokerConfig`; current shape uses
+  // `presetId` + `presetConfig`. We don't auto-migrate (per design — the
+  // mapping from old { type:'ccxt', brokerConfig:{exchange:'okx', ...} }
+  // to new { presetId:'okx', presetConfig:{mode:..., ...} } would have
+  // to invent values like `mode` from sandbox/demoTrading flags, and
+  // we'd rather have the user re-create accounts in the new wizard than
+  // silently mis-translate credentials.
+  if (Array.isArray(raw) && isLegacyAccountShape(raw as unknown[])) {
+    const backupPath = resolve(CONFIG_DIR, 'accounts.json.backup-pre-preset')
+    await writeFile(backupPath, JSON.stringify(raw, null, 2) + '\n')
+    await writeFile(resolve(CONFIG_DIR, 'accounts.json'), '[]\n')
+    throw new Error(
+      `accounts.json is in the pre-preset format (records with "type" + "brokerConfig"). ` +
+      `The trading account schema changed in v0.10 to a preset-based system — see ` +
+      `src/domain/trading/brokers/preset-catalog.ts for the new shape. ` +
+      `Your previous config has been backed up to ${backupPath} and accounts.json has been ` +
+      `reset to empty. Restart and re-create your accounts via the new wizard at /trading.`,
+    )
+  }
+
+  return accountsFileSchema.parse(raw)
 }
 
 export async function writeAccountsConfig(accounts: AccountConfig[]): Promise<void> {

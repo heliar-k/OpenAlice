@@ -11,6 +11,7 @@ import type { AccountCapabilities, BrokerHealth, BrokerHealthInfo } from './brok
 import { CcxtBroker } from './brokers/ccxt/CcxtBroker.js'
 import { createCcxtProviderTools } from './brokers/ccxt/ccxt-tools.js'
 import { createBroker } from './brokers/factory.js'
+import { getBrokerPreset } from './brokers/preset-catalog.js'
 import { UnifiedTradingAccount } from './UnifiedTradingAccount.js'
 import { loadGitState, createGitPersister } from './git-persistence.js'
 import { readAccountsConfig, type AccountConfig } from '../../core/config.js'
@@ -129,8 +130,8 @@ export class AccountManager {
       // Wait for broker.init() + broker.getAccount() to verify the connection
       await uta.waitForConnect()
 
-      // Re-register CCXT-specific tools if this is a CCXT account
-      if (accCfg.type === 'ccxt') {
+      // Re-register CCXT-specific tools if this account routes to the CCXT engine.
+      if (getBrokerPreset(accCfg.presetId).engine === 'ccxt') {
         this.toolCenter?.register(
           createCcxtProviderTools(this),
           'trading-ccxt',
