@@ -80,6 +80,31 @@ const positiveNumeric = z
     { message: 'must be a positive number or positive numeric string' },
   )
 
+/**
+ * Coerce LLM-supplied numeric inputs (which may arrive as `number`)
+ * into strings before forwarding into the staging layer. The staging
+ * APIs are string-only so Decimal precision is preserved end-to-end;
+ * this is the single conversion point at the AI tool boundary.
+ *
+ * Return type narrows the named fields to `string | undefined` so
+ * callers can pass the result directly into staging methods without
+ * an extra cast.
+ */
+type Stringify<T, K extends keyof T> =
+  Omit<T, K> & { [P in K]: undefined extends T[P] ? string | undefined : string }
+
+function toStringNumerics<T extends Record<string, unknown>, K extends keyof T>(
+  params: T,
+  fields: readonly K[],
+): Stringify<T, K> {
+  const out = { ...params } as Record<string, unknown>
+  for (const f of fields) {
+    const v = out[f as string]
+    if (v != null) out[f as string] = String(v)
+  }
+  return out as Stringify<T, K>
+}
+
 export function createTradingTools(manager: UTAManager, fxService?: FxService): Record<string, Tool> {
   return {
     listUTAs: tool({
@@ -398,7 +423,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
           limitPrice: z.string().optional().describe('Limit price for stop-limit SL (omit for stop-market)'),
         }).optional().describe('Stop loss order (single-level, full quantity)'),
       }),
-      execute: ({ source, ...params }) => manager.resolveOne(source).stagePlaceOrder(params),
+      execute: ({ source, ...params }) => manager.resolveOne(source).stagePlaceOrder(toStringNumerics(params, ['totalQuantity', 'cashQty', 'lmtPrice', 'auxPrice', 'trailStopPrice', 'trailingPercent'])),
     }),
 
     modifyOrder: tool({
@@ -415,7 +440,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         tif: z.enum(['DAY', 'GTC', 'IOC', 'FOK', 'OPG', 'GTD']).optional().describe('New time in force'),
         goodTillDate: z.string().optional().describe('New expiration date'),
       }),
-      execute: ({ source, ...params }) => manager.resolveOne(source).stageModifyOrder(params),
+      execute: ({ source, ...params }) => manager.resolveOne(source).stageModifyOrder(toStringNumerics(params, ['totalQuantity', 'lmtPrice', 'auxPrice', 'trailStopPrice', 'trailingPercent'])),
     }),
 
     closePosition: tool({
@@ -424,9 +449,9 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         source: z.string().describe(sourceDesc(true)),
         aliceId: z.string().describe('Contract ID (format: accountId|nativeKey, from searchContracts)'),
         symbol: z.string().optional().describe('Human-readable symbol. Optional.'),
-        qty: z.number().positive().optional().describe('Number of shares to sell (default: sell all)'),
+        qty: positiveNumeric.optional().describe('Number of shares to sell. Accepts number or decimal string. Default: sell all.'),
       }),
-      execute: ({ source, ...params }) => manager.resolveOne(source).stageClosePosition(params),
+      execute: ({ source, ...params }) => manager.resolveOne(source).stageClosePosition(toStringNumerics(params, ['qty'])),
     }),
 
     cancelOrder: tool({
