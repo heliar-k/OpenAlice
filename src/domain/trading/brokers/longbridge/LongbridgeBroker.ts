@@ -53,11 +53,19 @@ import type {
   LongbridgeBrokerConfig,
   LongbridgeAccountBalanceLike,
   LongbridgeStockPositionsResponseLike,
+  LongbridgeStockPositionLike,
   LongbridgeSecurityQuoteLike,
   LongbridgeSecurityDepthLike,
   LongbridgeOrderLike,
   LongbridgeMarketSessionLike,
+  LongbridgeStaticInfoLike,
+  LongbridgeOptionQuoteLike,
+  LongbridgeWarrantQuoteLike,
 } from './longbridge-types.js'
+
+// Longbridge SDK DerivativeType enum (mirrors `const enum DerivativeType`).
+const DERIVATIVE_OPTION = 0
+const DERIVATIVE_WARRANT = 1
 
 // ==================== Order-type translation ====================
 
@@ -436,37 +444,166 @@ export class LongbridgeBroker implements IBroker {
     return new Decimal(fxFrom.usd).div(new Decimal(fxTo.usd))
   }
 
+  /**
+   * Multi-stage position fetch:
+   *   1. stockPositions()       → cost / qty / currency / symbol
+   *   2. quote()  + staticInfo() → live mark price + derivative-type detection (parallel)
+   *   3. optionQuote() + warrantQuote() → multiplier metadata (parallel)
+   *
+   * stockPositions returns options and warrants under the same channels
+   * as plain stocks but does NOT identify the type or carry a multiplier
+   * — staticInfo's `stockDerivatives` field is the discriminator, and
+   * optionQuote/warrantQuote carry the actual multiplier values.
+   *
+   * Each enrichment call is independently fault-tolerant: a failure
+   * downgrades that field to a safe default (marketPrice → cost,
+   * multiplier → '1') rather than aborting the whole fetch. UI degrades
+   * gracefully instead of blanking the positions panel.
+   */
   async getPositions(): Promise<Position[]> {
+    let resp: LongbridgeStockPositionsResponseLike
     try {
-      const resp = (await this.tradeCtx.stockPositions()) as unknown as LongbridgeStockPositionsResponseLike
-      const out: Position[] = []
-      for (const channel of resp.channels) {
-        for (const p of channel.positions) {
-          const qty = new Decimal(p.quantity.toString())
-          if (qty.isZero()) continue
-          const contract = makeContract(p.symbol)
-          if (p.symbolName) contract.description = p.symbolName
-          const cost = new Decimal(p.costPrice.toString())
-          out.push({
-            contract,
-            currency: p.currency.toUpperCase(),
-            side: qty.gte(0) ? 'long' : 'short',
-            quantity: qty.abs(),
-            avgCost: cost.toString(),
-            // LB does not return live mark price on stockPositions —
-            // leave at cost so marketValue is conservative; UTA snapshot
-            // can refresh via getQuote() if needed.
-            marketPrice: cost.toString(),
-            marketValue: cost.times(qty.abs()).toString(),
-            unrealizedPnL: '0',
-            realizedPnL: '0',
-          })
-        }
-      }
-      return out
+      resp = (await this.tradeCtx.stockPositions()) as unknown as LongbridgeStockPositionsResponseLike
     } catch (err) {
       throw BrokerError.from(err)
     }
+
+    const rawPositions: LongbridgeStockPositionLike[] = []
+    for (const channel of resp.channels) {
+      for (const p of channel.positions) {
+        const qty = new Decimal(p.quantity.toString())
+        if (qty.isZero()) continue
+        rawPositions.push(p)
+      }
+    }
+    if (rawPositions.length === 0) return []
+
+    const symbols = Array.from(new Set(rawPositions.map(p => p.symbol)))
+
+    // ---- Stage 2: live quotes + static-info in parallel ----
+    const [quoteMap, staticMap] = await Promise.all([
+      this.fetchQuoteMap(symbols),
+      this.fetchStaticInfoMap(symbols),
+    ])
+
+    // Bucket symbols by derivative type from staticInfo. Symbols not
+    // present in the staticInfo map are treated as plain equity.
+    const optionSymbols: string[] = []
+    const warrantSymbols: string[] = []
+    for (const s of symbols) {
+      const derivs = staticMap.get(s)
+      if (!derivs) continue
+      if (derivs.includes(DERIVATIVE_OPTION)) optionSymbols.push(s)
+      else if (derivs.includes(DERIVATIVE_WARRANT)) warrantSymbols.push(s)
+    }
+
+    // ---- Stage 3: per-derivative multiplier in parallel ----
+    const [optMulMap, warMulMap] = await Promise.all([
+      this.fetchOptionMultiplierMap(optionSymbols),
+      this.fetchWarrantMultiplierMap(warrantSymbols),
+    ])
+
+    return rawPositions.map(p => this.buildPosition(p, quoteMap, optMulMap, warMulMap))
+  }
+
+  private buildPosition(
+    p: LongbridgeStockPositionLike,
+    quoteMap: Map<string, Decimal>,
+    optMulMap: Map<string, Decimal>,
+    warMulMap: Map<string, Decimal>,
+  ): Position {
+    const qty = new Decimal(p.quantity.toString())
+    const contract = makeContract(p.symbol)
+    if (p.symbolName) contract.description = p.symbolName
+    const cost = new Decimal(p.costPrice.toString())
+    const live = quoteMap.get(p.symbol)
+    const marketPrice = live ?? cost
+    const multiplier = optMulMap.get(p.symbol) ?? warMulMap.get(p.symbol) ?? new Decimal(1)
+    const absQty = qty.abs()
+    const marketValue = marketPrice.times(absQty).times(multiplier)
+    const unrealizedPnL = marketPrice.minus(cost).times(absQty).times(multiplier)
+    return {
+      contract,
+      currency: p.currency.toUpperCase(),
+      side: qty.gte(0) ? 'long' : 'short',
+      quantity: absQty,
+      avgCost: cost.toString(),
+      marketPrice: marketPrice.toString(),
+      marketValue: marketValue.toString(),
+      unrealizedPnL: unrealizedPnL.toString(),
+      realizedPnL: '0',
+      multiplier: multiplier.toString(),
+    }
+  }
+
+  /** Batch-fetch live `lastDone` for a symbol set. Returns empty map on failure. */
+  private async fetchQuoteMap(symbols: string[]): Promise<Map<string, Decimal>> {
+    const map = new Map<string, Decimal>()
+    if (symbols.length === 0) return map
+    try {
+      const quotes = (await this.quoteCtx.quote(symbols)) as unknown as LongbridgeSecurityQuoteLike[]
+      for (const q of quotes) {
+        map.set(q.symbol, new Decimal(q.lastDone.toString()))
+      }
+    } catch (err) {
+      console.warn(`LongbridgeBroker[${this.id}]: live-quote enrichment failed, falling back to costPrice:`,
+        err instanceof Error ? err.message : err)
+    }
+    return map
+  }
+
+  /** Batch-fetch staticInfo for derivative-type detection. Returns empty map on failure. */
+  private async fetchStaticInfoMap(symbols: string[]): Promise<Map<string, number[]>> {
+    const map = new Map<string, number[]>()
+    if (symbols.length === 0) return map
+    try {
+      const infos = await (this.quoteCtx as unknown as {
+        staticInfo: (s: string[]) => Promise<LongbridgeStaticInfoLike[]>
+      }).staticInfo(symbols)
+      for (const info of infos) {
+        map.set(info.symbol, info.stockDerivatives ?? [])
+      }
+    } catch (err) {
+      console.warn(`LongbridgeBroker[${this.id}]: staticInfo lookup failed, treating all positions as plain equity:`,
+        err instanceof Error ? err.message : err)
+    }
+    return map
+  }
+
+  /** Batch-fetch option contract multipliers. Returns empty map on failure. */
+  private async fetchOptionMultiplierMap(symbols: string[]): Promise<Map<string, Decimal>> {
+    const map = new Map<string, Decimal>()
+    if (symbols.length === 0) return map
+    try {
+      const quotes = await (this.quoteCtx as unknown as {
+        optionQuote: (s: string[]) => Promise<LongbridgeOptionQuoteLike[]>
+      }).optionQuote(symbols)
+      for (const q of quotes) {
+        map.set(q.symbol, new Decimal(q.contractMultiplier.toString()))
+      }
+    } catch (err) {
+      console.warn(`LongbridgeBroker[${this.id}]: optionQuote failed for ${symbols.length} symbols, multiplier defaults to 1:`,
+        err instanceof Error ? err.message : err)
+    }
+    return map
+  }
+
+  /** Batch-fetch warrant conversion ratios. Returns empty map on failure. */
+  private async fetchWarrantMultiplierMap(symbols: string[]): Promise<Map<string, Decimal>> {
+    const map = new Map<string, Decimal>()
+    if (symbols.length === 0) return map
+    try {
+      const quotes = await (this.quoteCtx as unknown as {
+        warrantQuote: (s: string[]) => Promise<LongbridgeWarrantQuoteLike[]>
+      }).warrantQuote(symbols)
+      for (const q of quotes) {
+        map.set(q.symbol, new Decimal(q.conversionRatio.toString()))
+      }
+    } catch (err) {
+      console.warn(`LongbridgeBroker[${this.id}]: warrantQuote failed for ${symbols.length} symbols, multiplier defaults to 1:`,
+        err instanceof Error ? err.message : err)
+    }
+    return map
   }
 
   async getOrders(orderIds: string[]): Promise<OpenOrder[]> {

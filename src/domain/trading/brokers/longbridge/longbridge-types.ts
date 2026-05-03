@@ -89,6 +89,31 @@ export interface LongbridgeOrderLike {
   msg: string
 }
 
+/** Subset of {@link SecurityStaticInfo} we read for derivative-type detection. */
+export interface LongbridgeStaticInfoLike {
+  symbol: string
+  /**
+   * Numeric DerivativeType enum values from the SDK (Option=0, Warrant=1).
+   * Empty array → plain equity / fund.
+   */
+  stockDerivatives: number[]
+  lotSize: number
+}
+
+/** Subset of {@link OptionQuote} we read. */
+export interface LongbridgeOptionQuoteLike {
+  symbol: string
+  /** Shares per contract (US equity options usually 100). */
+  contractMultiplier: { toString(): string }
+}
+
+/** Subset of {@link WarrantQuote} we read. */
+export interface LongbridgeWarrantQuoteLike {
+  symbol: string
+  /** Shares delivered per warrant on conversion (issuer-specific). */
+  conversionRatio: { toString(): string }
+}
+
 /** Subset of {@link MarketTradingSession} we read. */
 export interface LongbridgeMarketSessionLike {
   market: number

@@ -463,9 +463,12 @@ export class RequestBridge extends DefaultEWrapper {
       quantity: position.abs(),
       avgCost: averageCost,
       marketPrice,
+      // TWS already bakes contract.multiplier into marketValue — we
+      // surface the multiplier as metadata only, no math here.
       marketValue: new Decimal(marketValue).abs().toString(),
       unrealizedPnL: unrealizedPNL,
       realizedPnL: realizedPNL,
+      multiplier: contract.multiplier || '1',
     })
   }
 

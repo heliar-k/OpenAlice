@@ -77,6 +77,17 @@ export interface Position {
   marketValue: string
   unrealizedPnL: string
   realizedPnL: string
+  /**
+   * Shares-per-contract metadata: how many underlying shares one
+   * unit of `quantity` represents. `'1'` for plain stocks; `'100'`
+   * for US equity options; HK warrants/CBBCs use the issuer-specific
+   * conversion ratio (often a non-integer like '0.1' or '10').
+   *
+   * `marketValue` is already multiplier-applied at the broker layer —
+   * this field is metadata for UI / analytics ("1 contract = 100
+   * shares"), not a math input. Consumers must NOT re-apply.
+   */
+  multiplier?: string
 }
 
 // ==================== Order result ====================

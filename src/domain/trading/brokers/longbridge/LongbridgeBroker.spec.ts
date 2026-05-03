@@ -63,6 +63,8 @@ function attachMockContexts(broker: LongbridgeBroker): {
     depth: vi.fn(),
     staticInfo: vi.fn(),
     tradingSession: vi.fn(),
+    optionQuote: vi.fn(),
+    warrantQuote: vi.fn(),
   }
   ;(broker as unknown as { tradeCtx: typeof trade; quoteCtx: typeof quote }).tradeCtx = trade
   ;(broker as unknown as { tradeCtx: typeof trade; quoteCtx: typeof quote }).quoteCtx = quote
@@ -386,6 +388,144 @@ describe('LongbridgeBroker — getPositions()', () => {
     const [p] = await b.getPositions()
     expect(p.side).toBe('short')
     expect(p.quantity.toString()).toBe('100')
+  })
+
+  it('uses live lastDone from quote() as marketPrice (not costPrice)', async () => {
+    const b = makeBroker()
+    const { trade, quote } = attachMockContexts(b)
+    trade.stockPositions.mockResolvedValue({
+      channels: [{ accountChannel: 'HK', positions: [
+        { symbol: '700.HK', symbolName: 'Tencent', quantity: dec('200'), costPrice: dec('300'), currency: 'HKD', market: 2 },
+      ] }],
+    })
+    quote.quote.mockResolvedValue([{ symbol: '700.HK', lastDone: dec('350') }])
+    quote.staticInfo.mockResolvedValue([{ symbol: '700.HK', stockDerivatives: [], lotSize: 100 }])
+
+    const [p] = await b.getPositions()
+    expect(p.avgCost).toBe('300')
+    expect(p.marketPrice).toBe('350')                  // live, not costPrice
+    expect(p.marketPrice).not.toBe(p.avgCost)          // bug 1 regression guard
+    expect(p.marketValue).toBe('70000')                // 200 * 350 * 1
+    expect(p.unrealizedPnL).toBe('10000')              // (350-300) * 200 * 1
+    expect(p.multiplier).toBe('1')
+  })
+
+  it('falls back to costPrice when quote() fails for the symbol', async () => {
+    const b = makeBroker()
+    const { trade, quote } = attachMockContexts(b)
+    trade.stockPositions.mockResolvedValue({
+      channels: [{ accountChannel: 'HK', positions: [
+        { symbol: '700.HK', symbolName: '', quantity: dec('100'), costPrice: dec('300'), currency: 'HKD', market: 2 },
+      ] }],
+    })
+    quote.quote.mockRejectedValue(new Error('rate limited'))
+
+    const [p] = await b.getPositions()
+    expect(p.marketPrice).toBe('300')                  // fallback to cost
+    expect(p.marketValue).toBe('30000')                // 100 * 300 * 1
+    expect(p.unrealizedPnL).toBe('0')                  // mark==cost → 0 PnL
+  })
+
+  it('applies 100x multiplier to US options (contractMultiplier from optionQuote)', async () => {
+    const b = makeBroker()
+    const { trade, quote } = attachMockContexts(b)
+    trade.stockPositions.mockResolvedValue({
+      channels: [{ accountChannel: 'US', positions: [
+        // 1 contract of an AAPL call, $5.50 cost basis, current $7.00
+        { symbol: 'AAPL241220C00200000.US', symbolName: 'AAPL Call', quantity: dec('1'), costPrice: dec('5.5'), currency: 'USD', market: 1 },
+      ] }],
+    })
+    quote.quote.mockResolvedValue([{ symbol: 'AAPL241220C00200000.US', lastDone: dec('7') }])
+    quote.staticInfo.mockResolvedValue([
+      { symbol: 'AAPL241220C00200000.US', stockDerivatives: [0 /* Option */], lotSize: 100 },
+    ])
+    quote.optionQuote.mockResolvedValue([
+      { symbol: 'AAPL241220C00200000.US', contractMultiplier: dec('100') },
+    ])
+
+    const [p] = await b.getPositions()
+    expect(p.multiplier).toBe('100')
+    expect(p.marketPrice).toBe('7')
+    expect(p.marketValue).toBe('700')                  // 1 * 7 * 100 — was 7 before fix
+    expect(p.unrealizedPnL).toBe('150')                // (7-5.5) * 1 * 100
+  })
+
+  it('applies conversionRatio multiplier to HK warrants', async () => {
+    const b = makeBroker()
+    const { trade, quote } = attachMockContexts(b)
+    trade.stockPositions.mockResolvedValue({
+      channels: [{ accountChannel: 'HK', positions: [
+        { symbol: '21125.HK', symbolName: 'HSI Warrant', quantity: dec('10000'), costPrice: dec('0.20'), currency: 'HKD', market: 2 },
+      ] }],
+    })
+    quote.quote.mockResolvedValue([{ symbol: '21125.HK', lastDone: dec('0.25') }])
+    quote.staticInfo.mockResolvedValue([
+      { symbol: '21125.HK', stockDerivatives: [1 /* Warrant */], lotSize: 1000 },
+    ])
+    quote.warrantQuote.mockResolvedValue([
+      { symbol: '21125.HK', conversionRatio: dec('0.1') },  // 1 warrant ↔ 0.1 share
+    ])
+
+    const [p] = await b.getPositions()
+    expect(p.multiplier).toBe('0.1')
+    expect(p.marketPrice).toBe('0.25')
+    expect(p.marketValue).toBe('250')                  // 10000 * 0.25 * 0.1
+    // (0.25 - 0.2) * 10000 * 0.1 = 50
+    expect(new Decimal(p.unrealizedPnL).toFixed(0)).toBe('50')
+  })
+
+  it('mixes plain stock + option in one batch correctly', async () => {
+    const b = makeBroker()
+    const { trade, quote } = attachMockContexts(b)
+    trade.stockPositions.mockResolvedValue({
+      channels: [{ accountChannel: 'US', positions: [
+        { symbol: 'TSLA.US', symbolName: 'Tesla', quantity: dec('10'), costPrice: dec('200'), currency: 'USD', market: 1 },
+        { symbol: 'TSLA241220C00250000.US', symbolName: 'TSLA Call', quantity: dec('2'), costPrice: dec('3'), currency: 'USD', market: 1 },
+      ] }],
+    })
+    quote.quote.mockResolvedValue([
+      { symbol: 'TSLA.US', lastDone: dec('210') },
+      { symbol: 'TSLA241220C00250000.US', lastDone: dec('4') },
+    ])
+    quote.staticInfo.mockResolvedValue([
+      { symbol: 'TSLA.US', stockDerivatives: [], lotSize: 1 },
+      { symbol: 'TSLA241220C00250000.US', stockDerivatives: [0], lotSize: 100 },
+    ])
+    quote.optionQuote.mockResolvedValue([
+      { symbol: 'TSLA241220C00250000.US', contractMultiplier: dec('100') },
+    ])
+
+    const positions = await b.getPositions()
+    const stock = positions.find(p => p.contract.localSymbol === 'TSLA.US')!
+    const opt = positions.find(p => p.contract.localSymbol === 'TSLA241220C00250000.US')!
+    expect(stock.multiplier).toBe('1')
+    expect(stock.marketValue).toBe('2100')             // 10 * 210 * 1
+    expect(opt.multiplier).toBe('100')
+    expect(opt.marketValue).toBe('800')                // 2 * 4 * 100
+  })
+
+  it('staticInfo failure → all positions degrade to multiplier=1 (does not throw)', async () => {
+    const b = makeBroker()
+    const { trade, quote } = attachMockContexts(b)
+    trade.stockPositions.mockResolvedValue({
+      channels: [{ accountChannel: 'US', positions: [
+        { symbol: 'AAPL241220C00200000.US', symbolName: '', quantity: dec('1'), costPrice: dec('5.5'), currency: 'USD', market: 1 },
+      ] }],
+    })
+    quote.quote.mockResolvedValue([{ symbol: 'AAPL241220C00200000.US', lastDone: dec('7') }])
+    quote.staticInfo.mockRejectedValue(new Error('boom'))
+
+    const [p] = await b.getPositions()
+    expect(p.multiplier).toBe('1')                     // graceful degrade
+    expect(p.marketPrice).toBe('7')                    // live quote still works
+    expect(p.marketValue).toBe('7')                    // 1 * 7 * 1 (under-counts but doesn't throw)
+  })
+
+  it('still throws BrokerError when stockPositions itself fails', async () => {
+    const b = makeBroker()
+    const { trade } = attachMockContexts(b)
+    trade.stockPositions.mockRejectedValue(new Error('500 Internal Server Error'))
+    await expect(b.getPositions()).rejects.toThrow(/Internal Server Error/)
   })
 })
 
